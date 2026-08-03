@@ -7,7 +7,7 @@
 O Entrega Tudo saiu de um arquivo `.html` solto na OneDrive (`EntregaTudo-BETA-78.html`) para um repositório Git com regras de trabalho (`AGENTS.md`) e log de decisões (`logs/desenvolvimento.md`). Isso já é a base de governança. Mas o **código do app em si ainda não mudou nada** — ele foi só copiado para `public/index.html`. Hoje o projeto tem:
 
 - **1 arquivo de aplicação**: `public/index.html`, 5.218 linhas — HTML, CSS (27 linhas) e JavaScript/JSX (5.113 linhas) misturados no mesmo arquivo, sem build step (React e Babel carregados via CDN, JSX transpilado no navegador).
-- **0 arquivos de configuração de projeto**: sem `package.json`, sem `netlify.toml`, sem `.env`/`.env.example`, sem CI (nenhum `.yml` de GitHub Actions).
+- **0 arquivos de configuração de projeto**: sem `package.json`, sem config de deploy, sem `.env`/`.env.example`, sem CI (nenhum `.yml` de GitHub Actions).
 - **1 migration de banco versionada** (`supabase/migrations/20260802235900_corrige_rls_permissiva.sql`) e seu script de reversão (`docs/rollback_20260802_rls.sql`) — **escritos, mas ainda não aplicados em produção** (status "aguardando aprovação" no log).
 - **0 testes automatizados.**
 - **README com uma linha.**
@@ -28,8 +28,8 @@ Em resumo: o diagnóstico já foi feito (e foi feito bem — está tudo registra
 | 🟡 Média | `supabase/migrations/` com o schema completo versionado (baseline) | Só existe a migration de correção; o schema original (`drivers`, `places`, `flags`, `fretes`, `mrevs`, `rrevs`, `announcements`, `configuracoes`) não tem uma migration de criação registrada. Se o banco precisar ser recriado hoje, não há como reconstruir só com o Git. |
 | 🟡 Média | `docs/` por tema (fluxo de frete, geocodificação, painel admin, precificação) | Facilita retomar decisões sem depender de memória. |
 | 🟡 Média | Testes das funções puras (`fretePreco`, `hav`, `twoOpt`, `nnOrder`, `checkPrecision`, normalizadores) | São funções sem dependência de navegador — testáveis com `node --test` sem precisar de build step. Maior retorno por esforço entre os testes possíveis hoje. |
+| 🟠 Alta (revisada em 2026-08-03) | Migrar o deploy do Netlify (manual) para Cloudflare Workers, ligado ao GitHub | Descoberto em 2026-08-03: o site era publicado manualmente, sem relação com o Git — nenhum commit ou PR mudava o que estava no ar. Cogitou-se só ligar o Netlify existente ao GitHub, mas decidido migrar para Cloudflare: tráfego de arquivo estático não conta contra limite de plano lá (o Netlify grátis tem teto de banda/minutos de build), e unifica com o HaX, que já usa Cloudflare. Isso virou bloqueio prático para validar a etapa 4 (PIN/RLS) com segurança antes do merge. Ver `docs/deploy-cloudflare.md`. |
 | 🟢 Baixa | CI básico (GitHub Actions rodando os testes a cada push) | Só faz sentido depois de existir pelo menos um teste. |
-| 🟢 Baixa | Decisão de deploy (Netlify vs. Cloudflare) | Já foi explicitamente adiada no log; não é bloqueio para nada das etapas acima. |
 | ⚪ Futuro, fora de escopo por decisão já tomada | Quebrar o HTML único em componentes com build step (Vite etc.) | Decisão registrada em 2026-08-02: só depois de haver testes, para não arriscar regressão em produção sem rede de segurança. |
 
 ## 3. Plano de ação — etapas, em ordem
@@ -45,7 +45,7 @@ Cada etapa abaixo deve virar (ou continuar) um item próprio em `logs/desenvolvi
 6. Registrar em `logs/desenvolvimento.md` como "verificar" → "entregue", com evidência de antes/depois.
 
 ### Etapa TomTom — reduzir exposição da chave
-1. No painel da TomTom, restringir a chave por domínio (`entregatudo.netlify.app` + domínio de desenvolvimento, se houver).
+1. No painel da TomTom, restringir a chave por domínio (domínio final do Cloudflare, ver `docs/deploy-cloudflare.md` + domínio de desenvolvimento, se houver).
 2. Gerar uma chave nova só depois da restrição estar ativa.
 3. Substituir `TOMTOM_KEY` no `public/index.html` pela nova chave.
 4. Testar: chamar a API a partir de um domínio não autorizado e confirmar rejeição.
@@ -64,13 +64,14 @@ Criar uma migration "baseline" que documenta a estrutura **atual** de todas as t
 Começar por `fretePreco`, `hav`, `twoOpt`, `nnOrder`, `checkPrecision` e os normalizadores (`normLoc`, `normFrete`, `normRev`, etc.) — todas funções sem estado de navegador, extraíveis e testáveis com `node --test`, sem precisar de build step nem de mexer no `index.html` de produção ainda. Isso cria a "rede de segurança" que falta hoje antes de qualquer refatoração maior.
 
 ### Etapa 8 — deploy
-Decisão adiada por escolha explícita da responsável. Só retomar depois das etapas acima.
+Antecipada parcialmente em 2026-08-03: decidido migrar do Netlify (upload manual) para Cloudflare Workers, ligado ao GitHub, com deploy automático no `main` e prévias por Pull Request — ver `docs/deploy-cloudflare.md` para o passo a passo e os pontos de atenção (login Google precisa ser reconfigurado para o novo domínio).
 
 ## 4. O que ainda depende de decisão da responsável
 
 - Aprovar a aplicação da migration de RLS em produção (bloqueia tudo o mais urgente).
-- Confirmar que pode restringir/rotacionar a chave TomTom agora (precisa de acesso ao painel da TomTom).
-- Confirmar se o app roda direto abrindo o `.html` no navegador ou se depende de algo do Netlify em dev (afeta o que vai no README).
+- Confirmar que pode restringir/rotacionar a chave TomTom agora (precisa de acesso ao painel da TomTom) — usar o domínio final do Cloudflare.
+- Criar o projeto no Cloudflare Workers e ligá-lo ao GitHub (`docs/deploy-cloudflare.md`); atualizar o domínio autorizado no Google Cloud Console e no Supabase Auth.
+- Confirmar se o app roda direto abrindo o `.html` no navegador ou se depende de algo do provedor de deploy (afeta o que vai no README).
 
 ## 5. Definição de "projeto bem estruturado" para o Entrega Tudo
 

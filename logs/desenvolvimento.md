@@ -197,3 +197,45 @@ Este arquivo é a memória operacional do projeto. Cada demanda deve ter um item
 - Próximo controle: decisão da responsável para retomar e concluir a etapa 4 (aplicar a migration + trocar o PIN no código), que é o item crítico pendente; depois seguir a ordem descrita no plano.
 - Pendências: todas as etapas listadas no plano (4 em diante) seguem em aberto, cada uma com aprovação própria quando for iniciada.
 - Encerramento: este item (análise/plano) está encerrado; os itens de execução de cada etapa serão registrados separadamente.
+
+---
+
+## [2026-08-03] — Deploy: troca de rumo, Netlify manual → Cloudflare Workers ligado ao GitHub
+
+- Status: aguardando aprovação (arquivos prontos nesta branch; criar o projeto no Cloudflare e ligá-lo ao GitHub só a responsável consegue fazer, no painel do Cloudflare)
+- Responsável: assistente (Claude) para o código/documentação; responsável pelo projeto para a ação no painel do Cloudflare
+- Objetivo em linguagem simples: ao investigar por que a branch da etapa 4 (PIN) parecia não ter feito efeito, veio à tona que o site é publicado manualmente no Netlify, sem ligação com o GitHub — daí a confusão. A primeira ideia foi só ligar o Netlify existente ao GitHub (já preparado numa branch anterior). A responsável então perguntou se dava pra ir direto para Cloudflare, apontando que o Netlify grátis tem teto de banda/build que pode virar problema, e que o HaX já usa Cloudflare. Pesquisei os limites reais dos dois provedores e a resposta foi sim — a decisão mudou de "ligar Netlify ao GitHub" para "migrar para Cloudflare Workers ligado ao GitHub".
+- Impacto para quem usa: nenhum imediato. O site publicado no Netlify continua no ar até a migração ser concluída e testada.
+
+### 1. Entender
+- Problema ou oportunidade: (a) falta de deploy observável/testável antes de publicar (mesmo problema já registrado no item anterior, "Ligação do Netlify ao GitHub"); (b) o plano gratuito do Netlify tem limite de minutos de build e de banda/tráfego mensal — em algum momento de crescimento do app isso pode gerar cobrança ou travamento; (c) unificar o processo de deploy com o HaX, que já usa Cloudflare.
+- Resultado esperado: Entrega Tudo publicado via Cloudflare Workers (assets estáticos, sem servidor), ligado a este repositório GitHub, com deploy automático no `main` e prévia por Pull Request — mesmo benefício que se buscava com o Netlify, sem o teto de banda.
+- Dúvidas em aberto: nenhuma sobre a decisão em si (aprovada). Em aberto: quando o domínio final trocar, é preciso atualizar a lista de domínios autorizados no Google Cloud Console e no Supabase Auth (login Google quebra sem isso) — feito pela responsável, fora desta sessão.
+- Pessoas, áreas ou dados afetados: só o processo de publicação. Nenhum dado do app muda. O login Google fica temporariamente sensível durante a troca de domínio (ver "Planejar").
+
+### 2. Planejar
+- Solução proposta: (a) descartar a branch anterior (`claude/netlify-github-integration`, nunca enviada ao GitHub, sem efeito nenhum até agora); (b) criar `wrangler.jsonc` (configuração do Cloudflare Workers — assets em `public/`, sem script de servidor); (c) escrever `docs/deploy-cloudflare.md` com o passo a passo de como criar o projeto no painel do Cloudflare e ligá-lo ao GitHub (ação que só a responsável pode fazer — nenhuma ferramenta desta sessão cria projetos Workers ou liga contas GitHub/Cloudflare); (d) atualizar `docs/plano-de-acao-reestruturacao.md` (prioridades, etapa 8, etapa TomTom, dependências) para refletir a troca de provedor.
+- Fora do escopo: mudar qualquer coisa no comportamento do app; migrar o HaX (não é tocado); trocar já a chave TomTom por uma restrita ao novo domínio (fica para depois do domínio final estar definido).
+- Riscos e como reduzir: (a) mudança de domínio quebra o login Google se as URLs autorizadas não forem atualizadas no Google Cloud Console e no Supabase — documentado em `docs/deploy-cloudflare.md`, com recomendação de manter o domínio antigo do Netlify autorizado também durante a transição; (b) nome do Worker no painel do Cloudflare precisa bater exatamente com o campo `name` do `wrangler.jsonc` (`entregatudo`), senão o build falha — documentado no passo a passo.
+- Dependências: acesso da responsável ao painel do Cloudflare (Workers & Pages) e, para o ajuste do login, ao Google Cloud Console e ao painel de Authentication do Supabase.
+- Critérios de aceitação: projeto criado no Cloudflare, ligado a este repositório; um push no `main` publica sozinho; um Pull Request gera uma URL de prévia com comentário automático (depois de habilitado "non-production branch builds"); login Google funcionando no domínio novo.
+- Como testar: abrir a URL de prévia gerada num PR e navegar no app; depois da troca de domínio, testar o login Google de ponta a ponta.
+
+### 3. Aprovar
+- Decisão/aprovação: aprovado migrar para Cloudflare em vez de só ligar o Netlify — 2026-08-03, responsável pelo projeto, após pergunta direta sobre viabilidade e comparação de limites entre os dois provedores.
+
+### 4. Executar
+- Ações realizadas: branch `claude/netlify-github-integration` apagada localmente (nunca tinha sido enviada ao GitHub — sem efeito em nada); criada a branch `claude/cloudflare-integration` a partir do `main`; criado `wrangler.jsonc`; criado `docs/deploy-cloudflare.md`; atualizado `docs/plano-de-acao-reestruturacao.md` (seções 1, 2, 3 e 4).
+- Arquivos alterados: `wrangler.jsonc` (novo), `docs/deploy-cloudflare.md` (novo), `docs/plano-de-acao-reestruturacao.md` (atualizado).
+- Como desfazer: apagar `wrangler.jsonc` e `docs/deploy-cloudflare.md`, ou não mergear esta branch — nenhum efeito em produção até isso. O item anterior sobre Netlify (`docs/deploy-netlify.md`) nunca chegou a ser mergeado no `main`, então não precisa de reversão — só não será mais seguido.
+
+### 5. Verificar
+- Testes e resultados: consultada a documentação oficial do Cloudflare (via ferramenta de busca desta sessão) para confirmar os limites reais do plano grátis (build, banda, requisições) e o formato correto do `wrangler.jsonc` para um Worker só de assets, sem script — nenhum teste prático (criação do projeto) foi feito, pois depende de acesso ao painel do Cloudflare.
+- O que não foi possível testar: a ligação de fato entre Cloudflare e GitHub, e o funcionamento do login Google no domínio novo — ambos dependem de ações da responsável fora desta sessão.
+
+### 6. Entregar e acompanhar
+- Explicação simples da mudança: em vez de só ligar o Netlify (que já era publicado manualmente) ao GitHub, decidimos trocar de provedor para o Cloudflare — mesmo que o HaX já usa —, porque ele não cobra/trava por tráfego de arquivo estático como o Netlify grátis cobra. Preparamos os arquivos de configuração e o passo a passo; falta a responsável criar o projeto no painel do Cloudflare e, depois, atualizar o login Google para o domínio novo.
+- Como conferir o resultado: revisar o `diff` desta branch no GitHub; depois de seguir `docs/deploy-cloudflare.md`, abrir um Pull Request de teste e conferir se aparece a URL de prévia.
+- Próximo controle: responsável cria o projeto no Cloudflare Workers e liga ao GitHub; em seguida atualiza as URLs autorizadas no Google Cloud Console e no Supabase Auth; só depois disso a branch `claude/etapa4-seguranca-rls-pin` deve ser testada de verdade (login real) via URL de prévia, antes de qualquer merge no `main`.
+- Pendências: projeto Cloudflare ainda não criado; login Google ainda não reconfigurado para o novo domínio; teste da etapa 4 (PIN/admin) segue bloqueado até isso.
+- Encerramento: item continua aberto até a responsável confirmar o projeto criado e testado.

@@ -1,0 +1,10 @@
+{
+  // Publica o Entrega Tudo como Worker "só de assets" (sem script de servidor,
+  // sem build step) — ver docs/deploy-cloudflare.md para o passo a passo de
+  // ligação com o GitHub.
+  "name": "entregatudo",
+  "compatibility_date": "2026-08-03",
+  "assets": {
+    "directory": "./public"
+  }
+}
