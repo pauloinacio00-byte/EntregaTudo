@@ -140,5 +140,15 @@ Este arquivo é a memória operacional do projeto. Cada demanda deve ter um item
 - Como desfazer, se necessário: não aplicável (só leitura até aqui).
 
 ### 5. Verificar
-- Testes e resultados: pedida consulta adicional trazendo o texto da condição (`qual`/`with_check`) de cada regra, pra confirmar ou descartar as suspeitas acima antes de qualquer correção — evita agir em cima de achismo.
-- O que não foi possível testar: ainda não sabemos a condição real de nenhuma regra — item permanece em "entender" até a nova consulta.
+- Testes e resultados: responsável rodou a consulta trazendo `qual`/`with_check` de cada regra. **Confirmado — não era achismo:**
+  - 🔴 Crítico (condição literalmente `true`, vale pra qualquer um, sem login): `drivers_delete` (apagar qualquer motorista), `drivers_insert` (criar motorista falso sem checagem), `ann_insert`/`ann_delete` (forjar ou apagar avisos "oficiais" do admin — vetor de golpe/phishing pros motoristas), `flags`/`mrevs`/`rrevs` (`public_all` ALL/true/true — ler, criar, editar, apagar qualquer avaliação ou denúncia), `fretes_select_all` (ler nome, telefone e endereços de todos os chamados de frete — vazamento de dado pessoal de cliente), `fretes_update_own_or_claim` (segunda condição `status='aguardando'` permite editar frete pendente sem login).
+  - 🟠 Alto: `drivers_read`/`drivers_select_all` (`true`) expõem o e-mail de todos os motoristas — contradiz a promessa feita na tela de cadastro ("seu e-mail não é exibido publicamente"); `config_update_authenticated` só checa `auth.uid() IS NOT NULL` (logado), não checa se é admin — qualquer motorista logado pode mudar `configuracoes` (ex.: preço do combustível usado na precificação de frete pra todo mundo).
+  - ✅ Sem problema: `places_delete` (`created_by = auth.uid()`, corretamente restrito ao autor); leitura aberta de `places`/`configuracoes` parece intencional (diretório comunitário, dado não-sensível).
+- Conclusão: o PIN nunca foi a proteção real — e o banco também não está protegendo quase nada hoje. Isso deixou de ser só "etapa 4" e virou prioridade máxima: o app está com essas brechas abertas em produção agora.
+- Evidências: 2 prints com o resultado completo da consulta de `qual`/`with_check`, conferidos nesta sessão.
+
+### 6. Entregar e acompanhar (parcial — segue pra correção)
+- Explicação simples: descobrimos que o banco de dados do Entrega Tudo, hoje, deixa qualquer pessoa na internet (sem precisar login nem PIN) apagar motoristas, forjar avisos falsos do "administrador", mexer em avaliações e ler dados de clientes que pediram frete (nome, telefone, endereço). O app em si não fica visivelmente diferente — é uma porta aberta que não aparece na tela, só em quem souber chamar a API direto.
+- Decisões tomadas para a correção (2026-08-02): (1) só a responsável será admin por enquanto (dá pra adicionar mais gente depois); vou criar uma tabela `admins` + função `is_admin()` no banco, ligada ao UUID real da conta Google dela, substituindo o PIN por uma trava de verdade; (2) qualquer correção será revisada em SQL, testada com `--dry-run`, e só aplicada em produção com aprovação explícita depois disso — mesmo cuidado usado no HaX.
+- Próximo controle: obter o UUID (`auth.users.id`) da conta admin pra popular a tabela `admins`; depois disso, escrever e revisar a migration de correção antes de aplicar.
+- Pendências: migration de correção ainda não escrita; nada foi alterado em produção até aqui — este item é só diagnóstico.
