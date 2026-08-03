@@ -152,3 +152,10 @@ Este arquivo é a memória operacional do projeto. Cada demanda deve ter um item
 - Decisões tomadas para a correção (2026-08-02): (1) só a responsável será admin por enquanto (dá pra adicionar mais gente depois); vou criar uma tabela `admins` + função `is_admin()` no banco, ligada ao UUID real da conta Google dela, substituindo o PIN por uma trava de verdade; (2) qualquer correção será revisada em SQL, testada com `--dry-run`, e só aplicada em produção com aprovação explícita depois disso — mesmo cuidado usado no HaX.
 - Próximo controle: obter o UUID (`auth.users.id`) da conta admin pra popular a tabela `admins`; depois disso, escrever e revisar a migration de correção antes de aplicar.
 - Pendências: migration de correção ainda não escrita; nada foi alterado em produção até aqui — este item é só diagnóstico.
+
+### 7. Correção — migration escrita, aguardando aplicação
+- UUID do admin recebido (2026-08-02): `9af58470-79b0-4b7f-93da-f81a98390001`.
+- Migration escrita: `supabase/migrations/20260802235900_corrige_rls_permissiva.sql` — cria tabela `admins` + função `is_admin()`, popula com o UUID acima, e corrige `drivers`, `places`, `flags`, `mrevs`, `rrevs`, `announcements`, `configuracoes`, `fretes` (detalhe de cada mudança nos comentários do próprio arquivo). Nenhuma leitura pública que já era intencional foi removida; criação sem login Google (avaliações, denúncias) continua permitida, como hoje.
+- Script de reversão de emergência escrito: `docs/rollback_20260802_rls.sql` — recria as regras exatamente como estavam antes, caso algo quebre depois de aplicar.
+- Status: **aguardando aprovação** — arquivos existem só no repositório (Git), nada foi executado no banco de produção ainda.
+- Como aplicar quando aprovado: colar o conteúdo do arquivo da migration no SQL Editor do Supabase (projeto Entrega Tudo) e rodar — o script inteiro é uma transação (`begin`/`commit`), então se qualquer linha der erro, nada é aplicado (reverte sozinho). Depois, rodar de novo a consulta de `pg_policies` usada nesta investigação pra confirmar que as regras novas estão lá.
