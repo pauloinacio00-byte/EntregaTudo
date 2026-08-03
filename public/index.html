@@ -1224,6 +1224,19 @@ function App(){
   // @API-SWITCH: ao abrir o app, recupera sessão salva no navegador (persistSession:true)
   // e escuta login/logout em tempo real. É isso que faz "continuar logado até apertar Sair".
   const[authChecked,setAuthChecked]=useState(false);
+  // ── ADMIN: substitui o PIN fixo por uma checagem real no banco (public.is_admin,
+  // criada na migration 20260802235900). Só existe status de admin para quem tem
+  // sessão Supabase Auth de verdade (login Google) — o login de teste/local (enter())
+  // nunca marca isAdmin=true, porque não gera sessão nenhuma pra consultar.
+  const[isAdmin,setIsAdmin]=useState(false);
+  async function checarAdmin(session){
+    var sb=getSupabase();
+    if(!sb||!session){setIsAdmin(false);return;}
+    try{
+      var r=await sb.rpc("is_admin",{uid:session.user.id});
+      setIsAdmin(!r.error&&r.data===true);
+    }catch(e){setIsAdmin(false);}
+  }
   useEffect(function(){
     var cancelled=false,attempts=0,subRef=null;
     function tryInit(){
@@ -1234,12 +1247,14 @@ function App(){
           if(cancelled)return;
           atualizarAuthHeader(r.data.session);
           if(r.data.session)entrarComSessao(r.data.session);
+          checarAdmin(r.data.session);
           setAuthChecked(true);
         }).catch(function(){if(!cancelled)setAuthChecked(true);});
         subRef=sb.auth.onAuthStateChange(function(event,session){
           atualizarAuthHeader(session);
           if(event==="SIGNED_IN"&&session)entrarComSessao(session);
-          if(event==="SIGNED_OUT"){setDriver(null);DB.set("me",null);}
+          if(event==="SIGNED_OUT"){setDriver(null);DB.set("me",null);setIsAdmin(false);}
+          checarAdmin(session);
         });
       }else if(attempts<20){ // tenta de novo a cada 300ms por até ~6s (rede lenta)
         attempts++;
@@ -3677,9 +3692,7 @@ if(driver&&driver.id)fetch(SB_URL+"/deliveries?driver_id=eq."+encodeURIComponent
 // ═══ PERFIL ═══════════════════════════════════════════════════════
 // ═══ ADMIN PANEL ══════════════════════════════════════════════════
 
-function AdminPanel({revs,rrevs,mrevs,flags,locs,rests,onClose,onDeleteReview,onClearFlags,onDeleteDriver,onDeleteLoc,onDeleteRest,onHideReview}){
-  const[pin,setPin]=useState("");
-  const[unlocked,setUnlocked]=useState(false);
+function AdminPanel({isAdmin,revs,rrevs,mrevs,flags,locs,rests,onClose,onDeleteReview,onClearFlags,onDeleteDriver,onDeleteLoc,onDeleteRest,onHideReview}){
   const[tab,setTab]=useState("dash");
   // Estados do painel Avisos — declarados aqui (regra dos hooks React: nunca dentro de condicionais)
   const[annMsg,setAnnMsg]=useState("");
@@ -3688,34 +3701,34 @@ function AdminPanel({revs,rrevs,mrevs,flags,locs,rests,onClose,onDeleteReview,on
   const[annList,setAnnList]=useState([]);
   const[annSending,setAnnSending]=useState(false);
   useEffect(function(){
-    if(!unlocked)return;
+    if(!isAdmin)return;
     fetch(SB_URL+"/announcements?select=*&order=createdat.desc&limit=10",{headers:SB_H})
       .then(function(r){return r.ok?r.json():[];})
       .then(function(d){if(Array.isArray(d))setAnnList(d);}).catch(function(){});
-  },[unlocked]);
+  },[isAdmin]);
   const[selDriver,setSelDriver]=useState(null);
   const[confirmDlg,setConfirmDlg]=useState(null);
   const[regPeriod,setRegPeriod]=useState(30);
   const[regDrivers,setRegDrivers]=useState([]);
   // Carrega tabela drivers do Supabase quando admin desbloquear
   useEffect(function(){
-    if(!unlocked)return;
+    if(!isAdmin)return;
     sbGet("drivers").then(function(data){
       if(Array.isArray(data))setRegDrivers(data);
     }).catch(function(){});
-  },[unlocked]);
+  },[isAdmin]);
 
   // ── FRETES: controle de testes/lançamentos (evitar poluir o banco) ──
   const[freteAdminList,setFreteAdminList]=useState([]);
   const[combustivelInput,setCombustivelInput]=useState("");
   const[combustivelSalvando,setCombustivelSalvando]=useState(false);
   useEffect(function(){
-    if(!unlocked)return;
+    if(!isAdmin)return;
     fetch(SB_URL+"/configuracoes?chave=eq.combustivel_preco_litro&select=valor",{headers:SB_H})
       .then(function(r){return r.ok?r.json():[];})
       .then(function(rows){if(rows&&rows[0])setCombustivelInput(rows[0].valor);})
       .catch(function(){});
-  },[unlocked]);
+  },[isAdmin]);
   async function salvarCombustivel(){
     setCombustivelSalvando(true);
     await fetch(SB_URL+"/configuracoes?chave=eq.combustivel_preco_litro",{method:"PATCH",headers:{...SB_H,Prefer:"return=minimal"},
@@ -3732,8 +3745,8 @@ function AdminPanel({revs,rrevs,mrevs,flags,locs,rests,onClose,onDeleteReview,on
     }).catch(function(){setFreteAdminLoading(false);});
   }
   useEffect(function(){
-    if(unlocked&&tab==="fretes")carregarFretesAdmin();
-  },[unlocked,tab]);
+    if(isAdmin&&tab==="fretes")carregarFretesAdmin();
+  },[isAdmin,tab]);
   async function excluirFreteAdmin(id){
     await sbDel("fretes",id);
     setFreteAdminList(function(list){return list.filter(function(f){return f.id!==id;});});
@@ -3759,17 +3772,16 @@ function AdminPanel({revs,rrevs,mrevs,flags,locs,rests,onClose,onDeleteReview,on
     setFreteAdminList(function(list){return list.map(function(f){return f.id===id?{...f,teste:valor}:f;});});
   }
 
-  // ── PIN ────────────────────────────────────────────────────
-  if(!unlocked)return(
+  // ── ACESSO ─────────────────────────────────────────────────
+  // Sem PIN: quem entra aqui é quem o banco (public.is_admin, ver migration
+  // 20260802235900) reconhece como admin pela sessão Google já logada. Não há
+  // como "digitar uma senha" pra virar admin — só logando com a conta certa.
+  if(!isAdmin)return(
     <div style={{padding:24,textAlign:"center"}}>
-      <div style={{fontSize:32,marginBottom:12}}>🔐</div>
-      <div style={{fontWeight:800,fontSize:16,color:TXT,marginBottom:4}}>Acesso Administrador</div>
-      <div style={{fontSize:12,color:SUB,marginBottom:20}}>Digite o PIN para continuar</div>
-      <input type="password" value={pin} onChange={function(e){setPin(e.target.value);}}
-        placeholder="PIN" maxLength={6}
-        style={{background:CARD,border:"1px solid "+BORD,borderRadius:10,padding:"12px 16px",fontSize:18,color:TXT,width:"100%",textAlign:"center",marginBottom:12,letterSpacing:8}}/>
-      <Btn ok={pin.length>=4} label="Entrar" c={ORG} onClick={function(){if(pin==="2309")setUnlocked(true);else{setPin("");alert("PIN incorreto");}}}/>
-      
+      <div style={{fontSize:32,marginBottom:12}}>🔒</div>
+      <div style={{fontWeight:800,fontSize:16,color:TXT,marginBottom:4}}>Acesso restrito</div>
+      <div style={{fontSize:12,color:SUB,marginBottom:20}}>Esta área é exclusiva para administradores logados com Google. Se você deveria ter acesso e está vendo esta tela, confirme se está logado com a conta correta.</div>
+      <Btn ok={true} label="Fechar" c={ORG} onClick={onClose}/>
     </div>
   );
 
@@ -4525,7 +4537,7 @@ function PerfilTab({driver,locs,revs,rests,rrevs,mrevs,flags,onUpd,onDeleteRevie
           </div>
         </div>}
       </Sheet>}
-    {adminSheet&&<AdminPanel revs={revs} rrevs={rrevs} mrevs={mrevs} flags={flags} locs={locs} rests={rests} onClose={function(){setAdminSheet(false);}} onDeleteReview={onDeleteReview} onClearFlags={onClearFlags} onDeleteDriver={onDeleteDriver} onDeleteLoc={onDeleteLoc} onDeleteRest={onDeleteRest} onHideReview={onHideReview}/>}
+    {adminSheet&&<AdminPanel isAdmin={isAdmin} revs={revs} rrevs={rrevs} mrevs={mrevs} flags={flags} locs={locs} rests={rests} onClose={function(){setAdminSheet(false);}} onDeleteReview={onDeleteReview} onClearFlags={onClearFlags} onDeleteDriver={onDeleteDriver} onDeleteLoc={onDeleteLoc} onDeleteRest={onDeleteRest} onHideReview={onHideReview}/>}
 
       {/* ══ ROTEIROS ══════════════════════════════════════════════════ */}
       <RouteHistory driver={driver}/>

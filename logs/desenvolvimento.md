@@ -197,3 +197,45 @@ Este arquivo é a memória operacional do projeto. Cada demanda deve ter um item
 - Próximo controle: decisão da responsável para retomar e concluir a etapa 4 (aplicar a migration + trocar o PIN no código), que é o item crítico pendente; depois seguir a ordem descrita no plano.
 - Pendências: todas as etapas listadas no plano (4 em diante) seguem em aberto, cada uma com aprovação própria quando for iniciada.
 - Encerramento: este item (análise/plano) está encerrado; os itens de execução de cada etapa serão registrados separadamente.
+
+---
+
+## [2026-08-03] — Etapa 4 (continuação): substitui o PIN client-side pela checagem real de admin
+
+- Status: executar (código pronto nesta branch; aplicação da migration em produção e teste com login real seguem pendentes — ver "Verificar" e "Próximo controle")
+- Responsável: assistente (Claude), com decisão final da responsável pelo projeto
+- Objetivo em linguagem simples: o PIN `"2309"` do painel administrativo nunca foi uma proteção de verdade (só escondia um botão na tela). A correção de verdade já tinha sido escrita no banco (migration `20260802235900`, tabela `admins` + função `is_admin()`), mas o app ainda checava o PIN fixo no navegador em vez de perguntar ao banco quem é admin de verdade. Esta etapa troca essa checagem no código do app.
+- Impacto para quem usa: hoje, ninguém (o app publicado em produção não muda até esta branch ser aprovada e for ao ar). Quando for ao ar: o painel administrativo deixa de pedir PIN e passa a abrir sozinho só para quem estiver logado com a conta Google cadastrada como admin no banco; qualquer outra pessoa (logada ou não) vê uma tela de "Acesso restrito", sem campo de senha.
+
+### 1. Entender
+- Problema ou oportunidade: `pin==="2309"` comparado direto no navegador (linha ~3771 do `public/index.html`) é visível a qualquer um que abra "ver código-fonte"; mesmo com a migration de RLS aplicada, o app continuaria pedindo esse PIN em vez de usar a trava real do banco.
+- Resultado esperado: o app consulta `public.is_admin(auth.uid())` via RPC do Supabase (mesma função criada na migration) e só libera o painel para quem o banco reconhece como admin — nenhuma senha fixa no cliente.
+- Pessoas, áreas ou dados afetados: componente `AdminPanel` e fluxo de autenticação (`App`) em `public/index.html`. Nenhuma tabela nova; usa a função `is_admin()` já escrita na migration pendente.
+
+### 2. Planejar
+- Solução proposta: (a) em `App()`, depois de obter a sessão do Supabase Auth (login Google), chamar `sb.rpc("is_admin",{uid:session.user.id})` e guardar o resultado em um estado `isAdmin`; recalcular a cada login/logout; (b) passar `isAdmin` como prop para `AdminPanel`; (c) dentro de `AdminPanel`, remover os estados `pin`/`unlocked` e usar `isAdmin` no lugar de `unlocked` em todos os pontos (carregamento de dados do painel, aba de fretes, tela de bloqueio); (d) trocar a tela de PIN por uma tela de "Acesso restrito" sem campo de senha, com um botão para fechar.
+- Fora do escopo nesta etapa: aplicar a migration em produção (sem acesso direto ao banco nesta sessão — precisa ser feito pela responsável no SQL Editor do Supabase, como já documentado no item de 2026-08-02); mexer na chave TomTom (ação separada, pendente).
+- Riscos e como reduzir: (a) se a migration ainda não estiver aplicada quando este código for ao ar, `is_admin()` não existe no banco — a chamada RPC falha, cai no `catch`, e `isAdmin` fica `false` (fail-closed: painel fica bloqueado para todo mundo, inclusive a admin real, em vez de abrir para qualquer um — comportamento seguro, mas exige aplicar a migration **antes** de publicar este código); (b) o login de teste/local (`enter()`, sem sessão Supabase real) nunca deve virar admin — conferido no código: só sessões com `session.user.id` real disparam a checagem.
+- Dependências: aplicar a migration `20260802235900_corrige_rls_permissiva.sql` em produção **antes** desta mudança de código ir ao ar (senão ninguém consegue entrar no painel, nem a admin real).
+- Critérios de aceitação: com a migration aplicada, a conta Google cadastrada como admin (UUID `9af58470-79b0-4b7f-93da-f81a98390001`) abre o painel sem PIN; qualquer outra conta (ou ninguém logado) vê "Acesso restrito".
+- Como testar: login com a conta admin → painel abre direto; login com outra conta Google → "Acesso restrito"; sem login → "Acesso restrito".
+
+### 3. Aprovar
+- Decisão/aprovação: seguir com a implementação do código autorizado ("pode continuar", 2026-08-03). Trabalho feito em branch separada (`claude/etapa4-seguranca-rls-pin`, a partir do `main` atualizado) por pedido explícito da responsável, para nada ser publicado direto no `main`/deploy sem revisão. Aplicação da migration em produção e publicação deste código **continuam pendentes de aprovação própria**.
+
+### 4. Executar
+- Ações realizadas: criada a branch `claude/etapa4-seguranca-rls-pin` a partir do `main` (já com o plano de ação mergeado). Em `public/index.html`: adicionado estado `isAdmin` e função `checarAdmin(session)` em `App()`, chamada ao logar/deslogar e ao recuperar sessão salva; `isAdmin` passado como prop para `AdminPanel`; removidos os estados `pin`/`unlocked` do `AdminPanel` (12 ocorrências de `unlocked` trocadas por `isAdmin`); tela de PIN substituída por tela de "Acesso restrito" sem campo de senha.
+- Arquivos alterados: `public/index.html` (único arquivo de código do app).
+- Como desfazer: `git checkout` do commit anterior nesta branch, ou não dar merge/publicar esta branch — o `main` e a produção não são afetados até isso ser decidido.
+
+### 5. Verificar
+- Testes e resultados: verificação estática — o arquivo inteiro (JS/JSX dentro do `<script type="text/babel">`) foi passado pelo parser oficial do Babel (`@babel/core` + `@babel/preset-react`, mesmas ferramentas que o navegador usa em produção) e não acusou nenhum erro de sintaxe; `grep` confirmou que não sobrou nenhuma referência solta a `pin`, `setPin`, `setUnlocked` ou `unlocked` no arquivo.
+- O que não foi possível testar: teste funcional real no navegador (login Google de verdade, abrir o painel, confirmar que RLS + `is_admin()` funcionam juntos) — o app carrega React/Babel/Supabase via CDN e faz chamadas de login/API para o Supabase real, e a rede desta sessão de trabalho não tem acesso a esses domínios externos (ambiente isolado). **Este teste ainda precisa ser feito** — pela responsável, no navegador normal, depois que a migration estiver aplicada — antes de considerar esta etapa concluída.
+- Evidências: saída do `node` rodando o Babel (log desta sessão); `git diff` mostrando as 35 linhas alteradas em `public/index.html`.
+
+### 6. Entregar e acompanhar
+- Explicação simples da mudança: o código do painel administrativo foi reescrito para não depender mais de um PIN fixo — agora ele pergunta ao banco de dados "esta pessoa é admin de verdade?" antes de abrir. Isso só funciona depois que a migration do banco (que cria essa checagem) for aplicada. Por enquanto está tudo numa branch separada (`claude/etapa4-seguranca-rls-pin`), nada mudou no app publicado.
+- Como conferir o resultado: revisar o `diff` desta branch no GitHub (após o push); depois de aplicar a migration em produção, testar no navegador: logar com a conta admin e confirmar que o painel abre sem pedir PIN; logar com outra conta e confirmar que aparece "Acesso restrito".
+- Próximo controle: (1) responsável aplica a migration `20260802235900_corrige_rls_permissiva.sql` em produção (SQL Editor do Supabase) — pré-requisito obrigatório; (2) só depois disso, testar esta branch de verdade (login real) antes de qualquer merge no `main`/deploy; (3) seguir para a etapa TomTom (restringir domínio + rotacionar chave) do plano.
+- Pendências: migration não aplicada em produção; teste funcional com login real não feito; merge para `main` não deve acontecer antes dos dois itens acima.
+- Encerramento: item continua aberto — código pronto para revisão, execução completa depende da responsável.
