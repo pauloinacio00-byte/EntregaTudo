@@ -159,3 +159,41 @@ Este arquivo é a memória operacional do projeto. Cada demanda deve ter um item
 - Script de reversão de emergência escrito: `docs/rollback_20260802_rls.sql` — recria as regras exatamente como estavam antes, caso algo quebre depois de aplicar.
 - Status: **aguardando aprovação** — arquivos existem só no repositório (Git), nada foi executado no banco de produção ainda.
 - Como aplicar quando aprovado: colar o conteúdo do arquivo da migration no SQL Editor do Supabase (projeto Entrega Tudo) e rodar — o script inteiro é uma transação (`begin`/`commit`), então se qualquer linha der erro, nada é aplicado (reverte sozinho). Depois, rodar de novo a consulta de `pg_policies` usada nesta investigação pra confirmar que as regras novas estão lá.
+
+---
+
+## [2026-08-03] — Análise geral e plano de ação para a reestruturação
+
+- Status: entregue (análise e planejamento); execução das etapas listadas segue pendente, item por item
+- Responsável: assistente (Claude), a pedido da responsável pelo projeto
+- Objetivo em linguagem simples: a responsável pediu uma análise de tudo que já existe no repositório e um plano organizado das próximas medidas, para o projeto não se perder e continuar bem documentado.
+- Impacto para quem usa: nenhum — este item é só análise e documentação, nenhum código do app foi alterado.
+
+### 1. Entender
+- Problema ou oportunidade: o repositório já tem `AGENTS.md` e este log, mas faltava um documento único de visão geral (o que já foi feito, o que falta, em que ordem) — sem isso, é fácil perder o fio da meada entre uma sessão e outra.
+- Resultado esperado: documento de plano de ação, com diagnóstico atual e prioridades claras.
+
+### 2. Planejar
+- Solução proposta: revisar o estado real do repositório (arquivos, `public/index.html`, migration pendente) e escrever `docs/plano-de-acao-reestruturacao.md` com diagnóstico, matriz de prioridade e as etapas 3–8 já previstas no item de 2026-08-02, detalhadas.
+- Fora do escopo: executar qualquer etapa do plano nesta sessão (aplicar migration, trocar PIN, mexer na chave TomTom) — cada uma exige aprovação própria, como já registrado no item anterior.
+- Critérios de aceitação: documento cobre o estado atual verificado no código (não só o que constava no log anterior) e lista prioridades em ordem de risco.
+- Como testar: conferência manual do documento pela responsável.
+
+### 3. Aprovar
+- Decisão/aprovação: não exigiu aprovação prévia — é documentação/análise, sem mudança de comportamento do app ou do banco.
+
+### 4. Executar
+- Ações realizadas: inspeção do repositório (`git log`, `git status`, estrutura de pastas); leitura de `AGENTS.md`, `README.md` e `logs/desenvolvimento.md`; conferência direta no código de `public/index.html` que confirmou que a chave `TOMTOM_KEY` (linha 371) e o PIN `"2309"` (linha 3771) **ainda estão no código**, e que a migration de correção de RLS (etapa 4) **ainda não foi aplicada** — ou seja, a falha crítica registrada em 2026-08-02 continua ativa em produção; criado `docs/plano-de-acao-reestruturacao.md`.
+- Arquivos alterados: `docs/plano-de-acao-reestruturacao.md` (novo), este item no `logs/desenvolvimento.md`.
+- Como desfazer: apagar o arquivo novo ou reverter o commit — nenhuma mudança de comportamento do app ou do banco.
+
+### 5. Verificar
+- Testes e resultados: conferido por leitura direta do arquivo `public/index.html` (grep pelas linhas citadas) que os dois segredos seguem expostos e que a correção de RLS segue não aplicada — condição relatada corretamente no plano.
+- O que não foi possível testar: não há como confirmar do lado do código se a migration foi ou não aplicada no banco real (isso só a responsável consegue verificar no painel do Supabase); o plano assume "não aplicada" com base no status registrado no item anterior ("aguardando aprovação"), a confirmar.
+
+### 6. Entregar e acompanhar
+- Explicação simples da mudança: foi criado um documento (`docs/plano-de-acao-reestruturacao.md`) que resume o que já foi feito no projeto, o que ainda falta, e em que ordem fazer — com destaque para o fato de que a falha de segurança encontrada em 2026-08-02 (banco aberto para qualquer pessoa apagar dados) **continua sem correção aplicada** até esta data.
+- Como conferir o resultado: abrir `docs/plano-de-acao-reestruturacao.md` no repositório.
+- Próximo controle: decisão da responsável para retomar e concluir a etapa 4 (aplicar a migration + trocar o PIN no código), que é o item crítico pendente; depois seguir a ordem descrita no plano.
+- Pendências: todas as etapas listadas no plano (4 em diante) seguem em aberto, cada uma com aprovação própria quando for iniciada.
+- Encerramento: este item (análise/plano) está encerrado; os itens de execução de cada etapa serão registrados separadamente.
