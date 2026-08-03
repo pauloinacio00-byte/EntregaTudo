@@ -131,4 +131,14 @@ Este arquivo é a memória operacional do projeto. Cada demanda deve ter um item
 - Decisão/aprovação: aprovado seguir para investigação (2026-08-02, "prossiga"). Ainda pendente: decisão final sobre correção do PIN até termos o resultado do RLS.
 
 ### 4. Executar
-- (bloqueado até a responsável rodar as consultas SQL e responder sobre o histórico de exposição do arquivo)
+- Ações realizadas: responsável rodou as 2 consultas de leitura no SQL Editor do Supabase (projeto Entrega Tudo) e enviou os resultados em prints.
+- Resultado da consulta 1 (RLS ligado?): `true` nas 8 tabelas encontradas (`announcements`, `configuracoes`, `drivers`, `flags`, `fretes`, `mrevs`, `places`, `rrevs`). A tabela `reviews` não apareceu — não existe com esse nome exato no schema `public` (a apurar na etapa 6, quando os nomes reais forem confirmados).
+- Resultado da consulta 2 (regras existentes): RLS ligado não quer dizer protegido — depende da condição de cada regra, que essa consulta não trouxe (só nome/operação/papel). Leitura preliminar, só pelos nomes e papéis (todos `{public}` = vale pra qualquer um, logado ou não):
+  - **Suspeita alta:** `flags`, `mrevs`, `rrevs` têm uma única regra `public_all` cobrindo `ALL` (select/insert/update/delete) — nome sugere liberação total, sem condição.
+  - **Suspeita média:** `drivers` tem `drivers_delete` *além* de `drivers_delete_own` — duas regras pra apagar; no Postgres RLS, basta uma permitir. `places_delete` não tem nenhuma versão "own" — mesma suspeita.
+  - **A confirmar:** `configuracoes.config_update_authenticated` — o nome sugere restrição a usuário autenticado, mas isso só é garantido pela condição real (`with_check`), não pelo nome da regra.
+- Como desfazer, se necessário: não aplicável (só leitura até aqui).
+
+### 5. Verificar
+- Testes e resultados: pedida consulta adicional trazendo o texto da condição (`qual`/`with_check`) de cada regra, pra confirmar ou descartar as suspeitas acima antes de qualquer correção — evita agir em cima de achismo.
+- O que não foi possível testar: ainda não sabemos a condição real de nenhuma regra — item permanece em "entender" até a nova consulta.
