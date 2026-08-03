@@ -239,3 +239,9 @@ Este arquivo é a memória operacional do projeto. Cada demanda deve ter um item
 - Próximo controle: responsável cria o projeto no Cloudflare Workers e liga ao GitHub; em seguida atualiza as URLs autorizadas no Google Cloud Console e no Supabase Auth; só depois disso a branch `claude/etapa4-seguranca-rls-pin` deve ser testada de verdade (login real) via URL de prévia, antes de qualquer merge no `main`.
 - Pendências: projeto Cloudflare ainda não criado; login Google ainda não reconfigurado para o novo domínio; teste da etapa 4 (PIN/admin) segue bloqueado até isso.
 - Encerramento: item continua aberto até a responsável confirmar o projeto criado e testado.
+
+### 7. Confirmação — projeto Cloudflare criado
+- Responsável seguiu o passo a passo de `docs/deploy-cloudflare.md` e confirmou ("tudo feito", 2026-08-03).
+- Verificado nesta sessão (leitura direta da conta Cloudflare): Worker `entregatudo` existe, criado e publicado em 2026-08-03 14:00–14:08 (mesmo horário do trabalho desta sessão), ao lado do Worker `hax` já existente.
+- Status: **executar** — projeto criado e publicado. Ainda pendentes antes de considerar esta etapa encerrada: (a) confirmar que "non-production branch builds" está ativado (prévia por Pull Request); (b) atualizar as URLs autorizadas no Google Cloud Console e no Supabase Auth para o domínio novo do Cloudflare; (c) só então testar login real na branch `claude/etapa4-seguranca-rls-pin` antes de qualquer merge no `main`.
+- Como desfazer, se necessário: o site antigo no Netlify não foi desligado nem alterado — continua no ar como fallback até a transição ser confirmada de ponta a ponta.
