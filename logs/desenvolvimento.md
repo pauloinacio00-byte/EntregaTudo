@@ -101,3 +101,34 @@ Este arquivo é a memória operacional do projeto. Cada demanda deve ter um item
 - Próximo controle: decidir o que fazer com o arquivo original em `OneDrive\Imagens\EntregaTudo-BETA-78.html` (arquivar/apagar depois de confirmar que o repositório é a nova fonte da verdade); seguir para a etapa 4 do plano (segredos — chave da TomTom exposta e PIN do admin), que é a de maior prioridade de segurança.
 - Pendências, bloqueios ou decisões futuras: etapas 3 (README), 4 (segredos), 5 (docs), 6 (migrations), 7 (testes), 8 (deploy) do plano acima, cada uma com seu próprio registro quando começar.
 - Encerramento: item continua aberto (reestruturação em andamento, várias etapas pela frente).
+
+---
+
+## [2026-08-02] — Etapa 4: segredos no código-fonte (chave TomTom + PIN do admin)
+
+- Status: entender (parte bloqueada — depende de consulta que só a responsável pode rodar)
+- Responsável: assistente (Claude), com decisão final da responsável pelo projeto
+- Objetivo em linguagem simples: hoje qualquer pessoa que abrir "ver código-fonte" do app enxerga a chave da API de mapas (TomTom) e o PIN de 4 dígitos que libera o painel administrativo (apagar avaliações, motoristas, locais; editar preço do combustível). Precisamos entender o risco real de cada um e corrigir.
+- Impacto para quem usa: nenhuma mudança ainda — esta etapa é só investigação e planejamento.
+
+### 1. Entender
+- Problema ou oportunidade — são dois problemas de natureza diferente, não um só:
+  1. **Chave da TomTom** (`TOMTOM_KEY` em `public/index.html`): é usada direto do navegador pra falar com a API de mapas/trânsito. Chaves desse tipo (mapas, geocodificação) **sempre** ficam visíveis no código do cliente — isso é esperado até em apps grandes (Google Maps, Mapbox funcionam assim). O problema não é "esconder" (é impossível sem criar um servidor no meio, o que está fora do escopo combinado agora) — o problema é que essa chave **não tem nenhuma restrição de domínio configurada no painel da TomTom**, então qualquer pessoa pode copiá-la e usar em outro site, consumindo a cota/gerando custo. Também não sabemos há quanto tempo ou onde o arquivo `.html` com essa chave circulou fora do controle de versão.
+  2. **PIN do admin** (`"2309"`, comparado direto no navegador em `AdminPanel`): esse sim é uma falha real de segurança — não é sobre "chave visível", é sobre uma trava de autorização que só existe na tela, não no banco. Se as políticas de RLS (Row Level Security) do Postgres não bloquearem essas mesmas operações (apagar review, apagar motorista, apagar local, editar `configuracoes`) para quem não é admin de verdade, qualquer pessoa pode chamar a API do Supabase direto (sem nem abrir o app) e fazer a mesma coisa, PIN nenhum protege isso. **Não sei ainda se o RLS já cobre isso** — preciso que a responsável rode duas consultas de leitura no SQL Editor do Supabase (não mexo em senha de banco, mesma regra do HaX) e me devolva o resultado.
+- Resultado esperado: chave da TomTom restrita por domínio + rotacionada por precaução; PIN do admin substituído por uma trava real no banco (RLS ligada a um usuário autenticado marcado como admin), não mais uma comparação de string no navegador.
+- Dúvidas em aberto: (a) resultado das consultas de RLS abaixo; (b) se o arquivo `.html` com a chave já circulou publicamente em algum lugar (afeta a urgência da rotação).
+- Pessoas, áreas ou dados afetados: tabelas `drivers`, `places`, `reviews`, `mrevs`, `rrevs`, `flags`, `announcements`, `configuracoes` no Supabase do Entrega Tudo; conta da TomTom.
+
+### 2. Planejar
+- Solução proposta: (1) TomTom — configurar restrição de domínio no painel da TomTom (só aceitar chamadas vindas de `entregatudo.netlify.app` e, se usado, `localhost` em desenvolvimento) e gerar uma chave nova depois da restrição estar ativa; (2) PIN do admin — depois de ver o resultado do RLS, desenhar a trava correta (provavelmente uma coluna/tabela de admins + policies checando `auth.uid()`), como parte da etapa 6 (migrations) ou adiantada aqui se o RLS hoje estiver aberto.
+- Fora do escopo: criar um servidor/proxy para "esconder" a chave da TomTom (não é necessário — restrição de domínio resolve o problema real).
+- Riscos e como reduzir: se o RLS estiver aberto hoje, os dados da comunidade (reviews, locais) já estão vulneráveis a apagamento por qualquer pessoa há algum tempo — se for o caso, viramos prioridade máxima antes de qualquer outra etapa do plano.
+- Dependências: resultado das consultas SQL (responsável); acesso da responsável ao painel da TomTom para restringir/rotacionar a chave.
+- Critérios de aceitação: consulta confirma RLS cobrindo as tabelas sensíveis (ou plano corretivo definido); chave nova da TomTom só funciona a partir do domínio do app (testável tentando usá-la de outro lugar).
+- Como testar: chamar a API da TomTom com a chave nova a partir de um domínio não autorizado e confirmar que é rejeitada; tentar um `DELETE`/`PATCH` nas tabelas sensíveis sem estar autenticado como admin e confirmar que o Postgres recusa.
+
+### 3. Aprovar
+- Decisão/aprovação: aprovado seguir para investigação (2026-08-02, "prossiga"). Ainda pendente: decisão final sobre correção do PIN até termos o resultado do RLS.
+
+### 4. Executar
+- (bloqueado até a responsável rodar as consultas SQL e responder sobre o histórico de exposição do arquivo)
